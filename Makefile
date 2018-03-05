@@ -1,7 +1,7 @@
 # Makefile with suffix rules
 
 CC	= gcc
-CFLAGS	= -g
+CFLAGS	= -g -lrt
 TARGET1 = oss
 TARGET2 = user
 OBJS1 	= oss.o
