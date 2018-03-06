@@ -31,13 +31,11 @@ int main (int argc, char *argv[]) {
 	key_t messageQueueChildKey = 59569;
 
 	//Shared Memory Keys
-	key_t keySecondsClock = 59566;
-	key_t keyNanoSecondsClock = 59567;
-	
+	key_t keySimClock = 59566;
+
 	int messageBoxParentID;
 	int messageBoxChildID;
-	int shmidSecondsClock;
-	int shmidNanoSecondsClock;
+	int shmidSimClock;
 
 	int totalTimeRunning = 0; //time current process has been running
 	int workTime = 15000; //amount of workTime for 1 run
@@ -56,31 +54,31 @@ int main (int argc, char *argv[]) {
 
 
 	//Get Shared Memory
-	shmidSecondsClock = shmget(keySecondsClock, SHM_SIZE, 0777 );
-	shmidNanoSecondsClock = shmget(keyNanoSecondsClock, SHM_SIZE, 0777);
+	shmidSimClock = shmget(keySimClock, SHM_SIZE, 0666 );
 
 	//Attach to shared memory
-	int * secondsClock= (int *)(shmat(shmidSecondsClock, 0, 0));
-	int * nanoSecondsClock = (int *)(shmat(shmidNanoSecondsClock, 0, 0));
+	int * simClock= (int *)(shmat(shmidSimClock, 0, 0));
 
 
 	//get current times from shared memory clock
 	//load as start times for child process for seconds and nanoseconds
-	childProcessTimeSeconds = *secondsClock;
-	childProcessTimeNanoSeconds = *nanoSecondsClock;
+	childProcessTimeSeconds = simClock[1];
+	childProcessTimeNanoSeconds = simClock[0];
 
 	//message queue
-	if ((messageBoxParentID = msgget(messageQueueParentKey, 0777)) == -1){
+	if ((messageBoxParentID = msgget(messageQueueParentKey, 0666)) == -1){
 		perror("user: failed to acceess parent message box");
 		return 1;
 		}
 
-	if ((messageBoxChildID = msgget(messageQueueChildKey, 0777)) == -1){
+	if ((messageBoxChildID = msgget(messageQueueChildKey, 0666)) == -1){
 		perror("user: failed to access child messsage box");
 		return 1;
 	}
 
+printf("In Child - messageboxparentid is %d\n", messageBoxParentID);
 
+printf("In Child - messageboxchildtid is %d\n", messageBoxChildID);
 	//Seed random number generator
 	srand(time(NULL));
 
@@ -89,35 +87,43 @@ int main (int argc, char *argv[]) {
 
 	//CRITICAL SECTION
 
-	do{
-		msgrcv(messageBoxChildID, &message, sizeof(message), 1, 0); //retrieve message from max box.  child is blocked unless there is a message to take from box
 
-		//maybe not needed
+	while (totalTimeRunning < allotatedChildRunTime){
+		
+		printf("in Child - before message received\n");	
+		printf("address of message is %d\n", &message);
+		msgrcv(messageBoxChildID, &message, sizeof(message), 1, 0); //retrieve message from max box.  child is blocked unless there is a message to take from box
+		printf("In child - after receive message\n");
+		
+		
 		message.mesg_type = 1;
+		//maybe not needed
 
 		//check if current run exceeds total allotated time
 		if ((totalTimeRunning + workTime) > allotatedChildRunTime){
 			workTime = allotatedChildRunTime - totalTimeRunning; //reduce work to the amount of time remaining
 			}
 
+printf("before incrementing clocks\n");
 		//increment child clocks
 		childProcessTimeNanoSeconds += workTime; //shared memory time
 		totalTimeRunning += childProcessTimeNanoSeconds; //accumlating total amount of nanoseconds child process as ran
-
-		//increment the system clocks in shared memory
-		*nanoSecondsClock += childProcessTimeNanoSeconds;
-		*secondsClock += childProcessTimeSeconds;
 
 		//convert nanoseconds to seconds
 		if (childProcessTimeNanoSeconds > 1000000000){ //if nanoSeconds > 1000000000
 			childProcessTimeSeconds += childProcessTimeNanoSeconds/1000000000; //add number of fully divisible by nanoseconds to seconds clock.  will truncate
 			childProcessTimeNanoSeconds = childProcessTimeNanoSeconds%1000000000; //assign remainder of nanoseconds to nanosecond clock
 		}
-
 		
+		//increment the system clocks in shared memory
+		simClock[0] += childProcessTimeNanoSeconds;
+		simClock[1] += childProcessTimeSeconds;
+
+
+printf("after time conversion\n");		
 
 		//if  time exceeds alloated time for entire process, terminate and send message to parent
-		if (*secondsClock >= 2){
+		if (simClock[1] >= 2){
 			message.mesg_type = 1;
 			message.mesg_terminatedOnSeconds = childProcessTimeSeconds;
 			message.mesg_terminatedOnNanoSeconds = childProcessTimeNanoSeconds; 
@@ -128,23 +134,30 @@ int main (int argc, char *argv[]) {
 			if(msgsnd(messageBoxParentID, &message, sizeof(message), 0) == -1){
 				perror("user: could not send message to parent box");
 			}
+		} else {
+			printf("not been 2 seconds yet\n");
 		}
 
 		//if duration has not passed, cede critical section to another child process
 		if(totalTimeRunning < allotatedChildRunTime){
+
+	printf("inside totaltimeRunning < allotatedChildRunTime\n");
 			message.mesg_type = 1;
 			message.mesg_terminatedOnSeconds = childProcessTimeSeconds;
 			message.mesg_terminatedOnNanoSeconds = childProcessTimeNanoSeconds; 
 			message.mesg_childSecondsTime = childProcessTimeSeconds;
 			message.mesg_childNanoSecondsTime = childProcessTimeNanoSeconds;
 			message.mesg_childPid = getpid();
-	
+	printf("after message prep\n");
+	printf("messageBoxChildID is %d\n", messageBoxChildID);
 			if(msgsnd(messageBoxChildID, &message, sizeof(message), 0) == -1){
 				perror("user: could not send message to child box");
 
+			} else {
+	printf("message sent\n");
 			}
 		}
-
+printf("before message prep\n");
 		
 		//prepare message 
 		message.mesg_type = 1;
@@ -163,8 +176,7 @@ int main (int argc, char *argv[]) {
 
 
 
-	} while (totalTimeRunning < allotatedChildRunTime);
-
+}
 
 
 return 0;
