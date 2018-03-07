@@ -18,21 +18,22 @@
 struct mesg_buffer {
 	long mesg_type; //always 1
 	int mesg_terminatedOn[2]; //[0] for nanoseconds, [1] for seconds
-	long mesg_ranFor;
+	float mesg_ranFor;
 	int mesg_childPid; //to tell parent which child terminated
 } message;
+
 
 int main (int argc, char *argv[]) {
 
 	//message queue key
-	key_t messageQueueParentKey = 59568;
-	key_t messageQueueChildKey = 59569;
+//	key_t messageQueueParentKey = 59568;
+	key_t messageQueueKey = 59569;
 
 	//Shared Memory Keys
 	key_t keySimClock = 59566;
 
-	int messageBoxParentID;
-	int messageBoxChildID;
+//	int messageBoxParentID;
+	int messageBoxID;
 	int shmidSimClock;
 
 	int totalTimeRunning = 0; //time current process has been running
@@ -64,19 +65,16 @@ int main (int argc, char *argv[]) {
 	childProcessTimeNanoSeconds = simClock[0];
 
 	//message queue
-	if ((messageBoxParentID = msgget(messageQueueParentKey, 0666)) == -1){
+	if ((messageBoxID = msgget(messageQueueKey, 0666)) == -1){
 		perror("user: failed to acceess parent message box");
 		return 1;
 		}
 
-	if ((messageBoxChildID = msgget(messageQueueChildKey, 0666)) == -1){
-		perror("user: failed to access child messsage box");
-		return 1;
-	}
+//	if ((messageBoxChildID = msgget(messageQueueChildKey, 0666)) == -1){
+//		perror("user: failed to access child messsage box");
+//		return 1;
+//	}
 
-								//printf("In Child - messageboxparentid is %d\n", messageBoxParentID);
-
-								//printf("In Child - messageboxchildtid is %d\n", messageBoxChildID);
 	//Seed random number generator
 	srand(time(NULL));
 
@@ -91,7 +89,7 @@ printf("Child %d alloatedRunTime is %f\n", getpid(), allotatedChildRunTime);
 printf("In Child - Sim Clock is %d.%d\n", simClock[1], simClock[0]);
 								//printf("in Child - before message received\n");	
 								//printf("address of message is %d\n", &message);
-		msgrcv(messageBoxChildID, &message, sizeof(message), 1, 0); //retrieve message from max box.  child is blocked unless there is a message to take from box
+		msgrcv(messageBoxID, &message, sizeof(message), 1, 0); //retrieve message from max box.  child is blocked unless there is a message to take from box
 								//printf("In child - after receive message\n");
 		
 		
@@ -129,7 +127,7 @@ printf("simClock has passed 2 seconds\n");
 			message.mesg_terminatedOn[1] = simClock[1] ;
 			message.mesg_ranFor = totalTimeRunning;
 			message.mesg_childPid = getpid(); //to tell parent which child terminated
-			if(msgsnd(messageBoxParentID, &message, sizeof(message), 0) == -1){
+			if(msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 				perror("user: could not send message to parent box");
 			
 			}
@@ -143,7 +141,7 @@ printf("before exit command\n");
 								//printf("inside totaltimeRunning < allotatedChildRunTime\n");
 
 								//printf("messageBoxChildID is %d\n", messageBoxChildID);
-			if(msgsnd(messageBoxChildID, &message, sizeof(message), 0) == -1){
+			if(msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 				perror("user: could not send message to child box");
 			}
 								//printf("before message prep\n");
@@ -160,7 +158,7 @@ printf("before exit command\n");
 
 		
 		//send message to parent
-	if (msgsnd(messageBoxParentID, &message, sizeof(message), 0) == -1){
+	if (msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 		perror("user: failed to send to parent box");
 	}	
 
@@ -174,4 +172,5 @@ return 0;
 }
 
 
+	
 
