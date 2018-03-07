@@ -20,7 +20,7 @@ void print_usage();
 struct mesg_buffer {
 	long mesg_type; //always 1
 	int mesg_terminatedOn[2]; //[0] for nanoseconds, [1] for seconds
-	long mesg_ranFor;
+	int mesg_ranFor;
 	int mesg_childPid; //to tell parent which child terminated
 } message;
 
@@ -28,14 +28,14 @@ struct mesg_buffer {
 //Globals
 
 //message queue key
-key_t messageQueueParentKey;
-key_t messageQueueChildKey;
+//key_t messageQueueParentKey;
+key_t messageQueueKey;
 
 //Shared Memory Keys
 key_t keySimClock;
 
-int messageBoxParentID;
-int messageBoxChildID;
+//int messageBoxParentID;
+int messageBoxID;
 
 //file creation for log
 char fileName[50] = "data.log";  //default if not selected by command line
@@ -53,14 +53,14 @@ int main (int argc, char *argv[]) {
 
 	//initalize variables
 	//keys
-	messageQueueParentKey = 59568;
-	messageQueueChildKey = 59569;
+//	messageQueueParentKey = 59568;
+	messageQueueKey = 59569;
 	keySimClock = 59566;
 
 	int maxProcess = 5; //default max processes if not specified 
 	int processCount = 0; //current number of processes
 	int processLimit = 100; //max number of processes allowed by assignment parameters
-	int totalProcessesCreated; //keeps track of all processes created	
+	int totalProcessesCreated = 0; //keeps track of all processes created	
 	int *simClock; // simulated system clock  simClock [0] = seconds, simClock[1] = nanoseconds
 
 	int shmidSimClock;
@@ -111,79 +111,83 @@ int main (int argc, char *argv[]) {
 	simClock[1] = 0; //seconds
 
 
-	fp = fopen(fileName, "a");
+	fp = fopen(fileName, "w");
 //printf("after file open\n");
 
 //printf("after assigning clock values\n");
 
 
 //create mail boxes
-	if ((messageBoxParentID = msgget(messageQueueParentKey, IPC_CREAT | 0666)) == -1){
-		perror("oss: Could not create parent mail box");
-		return 1;
-	}
+//	if ((messageBoxParentID = msgget(messageQueueParentKey, IPC_CREAT | 0666)) == -1){
+//		perror("oss: Could not create parent mail box");
+//		return 1;
+//	}
 
-	if ((messageBoxChildID = msgget(messageQueueChildKey, IPC_CREAT | 0666)) == -1){
+	if ((messageBoxID = msgget(messageQueueKey, IPC_CREAT | 0666)) == -1){
 		perror("oss: Could not create child mail box");
 		return 1;
 	}
 	message.mesg_type = 1; //set message type
 
-	if(msgsnd(messageBoxChildID, &message, sizeof(message), 0) == -1){
+	if(msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 		perror("oss: Failed to send message to child");
 	}
 
 
 //MAIN PROCESS
-
-	while ( simClock[1] < 2) {  //runs for 2 seconds.  secondsCLock incremented in user
-//printf("OSS: Inside Do loop\n");
+printf("process count before while loop is %d", processCount);
+	while ( simClock[1] <=2 && totalProcessesCreated < 100) {  //runs for 2 seconds.  simClock [1] incremented in user
+		//create children
 		while (processCount < maxProcess){ //spawn children to max.  each child will be blocked until there is a message in the box for it
-	
-			if ((childpid = fork()) == -1){
-				perror("oss: failed to fork child");
-			}
-
+			childpid = fork();
 			if ((childpid == 0)){
-				fprintf(fp, "Creating new child pid %d at my time %d.%d \n", getpid(), simClock[1], simClock[0]);
-				fflush(fp);
-//printf("Forking child\n");
-				execl("./user", NULL);
-				return 1;
-			}
-//printf("after the fork\n");
-			
+					fprintf(fp, "Creating new child pid %d at my time %d.%d \n", getpid(), simClock[1], simClock[0]);
+					fflush(fp);
+					execl("./user", NULL);
+					return 1;
+				}
 			//increment process count
-			processCount++; // controls inner loop
+			processCount++;
 			totalProcessesCreated++;  //used to decided if overall too many processes have generated
-
-			if (totalProcessesCreated >= processLimit){ //break the loop if number of processes exceed the limit
-				break;
-
+			//sleep(1); //to help visualize runs when testing
+			
 			}
-		}	
-	
+			//wait for child process to send a message to it
+			wait(NULL);	
 			//CRITICAL SECTION		
 	
 			//receive a message		
-			msgrcv(messageBoxParentID, &message, sizeof(message), 1, 0);
+			msgrcv(messageBoxID, &message, sizeof(message), 1, 0);
 			printf("In Parent - received message - message type was %ld\n", message.mesg_type);
 			printf("In Parent - received message - terminated on %d.%d\n", message.mesg_terminatedOn[0], message.mesg_terminatedOn[1]);
 			printf("In Parent - received message - ran for %ld\n", message.mesg_ranFor);
 			printf("In Parent - received message - child pid was %d\n", message.mesg_childPid);
-	
-			processCount--; //decrement process count when message received from child.  message receied indicates the child has terminated.  this will allow inner while loop to continue if processCount drops below max when the outer loop repeats after receiving message from child
-			
+		
 			//NEED TO CONFIGURE LOG OUTPUT
+
+			//convert message.mesg_ranFor into format seconds.nanoseconds
+			int convertedRanFor[2];
+			convertedRanFor[1] = message.mesg_ranFor/1000000000; //assign fully divisible by nanoseconds to seconds clock
+			convertedRanFor[0] = message.mesg_ranFor%1000000000;
 	
+
+			fprintf(fp, "Child pid is %d is terminating at my time %d.%d because it reached %d.%d which lived for %d.%d\n", message.mesg_childPid, simClock[1], simClock[0], message.mesg_terminatedOn[1], message.mesg_terminatedOn[0], convertedRanFor[1], convertedRanFor[0]);
+			fflush(fp);
 
 			//increment clock by 100 per assignment guidelines
 			simClock[0] += 100;
-		
+			//convert nanoseconds to seconds	
+			if (simClock[0] > 1000000000){ //if nanoSeconds > 1000000000
+				simClock[1] += simClock[0]/1000000000; //add number of fully divisible by nanoseconds to seconds clock.  will truncate
+				simClock[0] = simClock[0]%1000000000; //assign remainder of nanoseconds to nanosecond clock
+			}
+
+			processCount--; //decrement process count when message received from child.  message receied indicates the child has terminated.  this will allow inner while loop to continue if processCount drops below max when the outer loop repeats after receiving message from child
+		printf("process count is %d\n", processCount);	
 			
 			//send message to child box to signal another child can process
 			message.mesg_type = 1;	
-			if (msgsnd(messageBoxChildID, &message, sizeof(message), 0) == -1){
+			if (msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 				perror("oss: failed to send message to child box\n");
 			}
 	}	
@@ -196,8 +200,8 @@ wait(NULL); // wait for all child processes to end
 shmdt(simClock);
 
 shmctl(shmidSimClock, IPC_RMID, NULL);
-msgctl(messageBoxParentID, IPC_RMID, NULL);
-msgctl(messageBoxChildID, IPC_RMID, NULL);
+//msgctl(messageBoxParentID, IPC_RMID, NULL);
+msgctl(messageBoxID, IPC_RMID, NULL);
 
 
 
