@@ -31,13 +31,11 @@ int main (int argc, char *argv[]){
 	}
 
 	//message queue key
-//	key_t messageQueueParentKey = 59568;
 	key_t messageQueueKey = 59569;
 
 	//Shared Memory Keys
 	key_t keySimClock = 59566;
 
-//	int messageBoxParentID;
 	int messageBoxID;
 	int shmidSimClock;
 
@@ -66,23 +64,15 @@ int main (int argc, char *argv[]){
 	childProcessStartTime[0] = simClock[0];
 	childProcessStartTime[1] = simClock[1];
 
-
-	//get current times from shared memory clock
-	//load as start times for child process for seconds and nanoseconds
-
 	//message queue
 	if ((messageBoxID = msgget(messageQueueKey, 0666)) == -1){
 		perror("user: failed to acceess parent message box");
 		return 1;
 		}
 
-//	if ((messageBoxChildID = msgget(messageQueueChildKey, 0666)) == -1){
-//		perror("user: failed to access child messsage box");
-//		return 1;
-//	}
-
 	//Seed random number generator
-	srand(time(NULL));
+	time_t timeSeed;
+	srand((int)time(&timeSeed) % getpid()); //%getpid used because children were all getting the same "random" time to run. 
 
 	//set child run time
 	allotatedChildRunTime = (rand() % 1000000) + 1; //random run time between .001 and .01 seconds
@@ -92,11 +82,8 @@ printf("Child %d alloatedRunTime is %f\n", getpid(), allotatedChildRunTime);
 
 	while (totalTimeRunning < allotatedChildRunTime){		
 
-printf("In Child - Sim Clock is %d.%d\n", simClock[1], simClock[0]);
-								//printf("in Child - before message received\n");	
-								//printf("address of message is %d\n", &message);
+//printf("In Child - Sim Clock is %d.%d\n", simClock[1], simClock[0]);
 		msgrcv(messageBoxID, &message, sizeof(message), 1, 0); //retrieve message from max box.  child is blocked unless there is a message to take from box
-								//printf("In child - after receive message\n");
 		
 		
 		message.mesg_type = 1;
@@ -107,7 +94,6 @@ printf("In Child - Sim Clock is %d.%d\n", simClock[1], simClock[0]);
 			workTime = allotatedChildRunTime - totalTimeRunning; //reduce work to the amount of time remaining
 			}
 
-								//printf("before incrementing clocks\n");
 		//convert nanoseconds to seconds
 		if (simClock[0] > 1000000000){ //if nanoSeconds > 1000000000
 			simClock[0] += simClock[0]/1000000000; //add number of fully divisible by nanoseconds to seconds clock.  will truncate
@@ -117,8 +103,6 @@ printf("In Child - Sim Clock is %d.%d\n", simClock[1], simClock[0]);
 		//increment the system clocks in shared memory
 		simClock[0] += workTime;
 		totalTimeRunning += workTime;
-
-								//printf("after time conversion\n");		
 
 		//if  time exceeds alloated time for entire process, terminate and send message to parent
 		if (simClock[1] >= 2){
@@ -138,14 +122,9 @@ printf("before exit command\n");
 
 		//if duration has not passed, cede critical section to another child process
 		if(totalTimeRunning < allotatedChildRunTime){
-								//printf("total time running is %d and exceeded allotatedchildrun time of %f\n", totalTimeRunning, allotatedChildRunTime);
-								//printf("inside totaltimeRunning < allotatedChildRunTime\n");
-
-								//printf("messageBoxChildID is %d\n", messageBoxChildID);
 			if(msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 				perror("user: could not send message to child box");
 			}
-								//printf("before message prep\n");
 		
 		}
 	}	
@@ -162,11 +141,6 @@ printf("before exit command\n");
 	if (msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 		perror("user: failed to send to parent box");
 	}	
-
-
-		
-
-
 
 return 0;
 
