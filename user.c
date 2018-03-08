@@ -40,8 +40,8 @@ int main (int argc, char *argv[]) {
 	int workTime = 15000; //amount of workTime for 1 run
 	float allotatedChildRunTime; //how long the child process is allowed to run.  determined randomly in child
 
-	int childProcessTimeSeconds; //seconds clock for child process
-	int childProcessTimeNanoSeconds; //nanoseconds clock for child process
+
+	int childProcessStartTime[2];
 
 //TESTING ONLY
 //char sampleMessage[20] = "A test message";
@@ -55,14 +55,14 @@ int main (int argc, char *argv[]) {
 	//Get Shared Memory
 	shmidSimClock = shmget(keySimClock, SHM_SIZE, 0666 );
 
-	//Attach to shared memory
+	//Attach to shared memory and get simClock time
 	int * simClock= (int *)(shmat(shmidSimClock, 0, 0));
+	childProcessStartTime[0] = simClock[0];
+	childProcessStartTime[1] = simClock[1];
 
 
 	//get current times from shared memory clock
 	//load as start times for child process for seconds and nanoseconds
-	childProcessTimeSeconds = simClock[1];
-	childProcessTimeNanoSeconds = simClock[0];
 
 	//message queue
 	if ((messageBoxID = msgget(messageQueueKey, 0666)) == -1){
@@ -102,20 +102,15 @@ printf("In Child - Sim Clock is %d.%d\n", simClock[1], simClock[0]);
 			}
 
 								//printf("before incrementing clocks\n");
-		//increment child clocks
-		childProcessTimeNanoSeconds += workTime; //shared memory time
-		totalTimeRunning += childProcessTimeNanoSeconds; //accumlating total amount of nanoseconds child process as ran
-
 		//convert nanoseconds to seconds
-		if (childProcessTimeNanoSeconds > 1000000000){ //if nanoSeconds > 1000000000
-			childProcessTimeSeconds += childProcessTimeNanoSeconds/1000000000; //add number of fully divisible by nanoseconds to seconds clock.  will truncate
-			childProcessTimeNanoSeconds = childProcessTimeNanoSeconds%1000000000; //assign remainder of nanoseconds to nanosecond clock
+		if (simClock[0] > 1000000000){ //if nanoSeconds > 1000000000
+			simClock[0] += simClock[0]/1000000000; //add number of fully divisible by nanoseconds to seconds clock.  will truncate
+			simClock[1] = simClock[0]%1000000000; //assign remainder of nanoseconds to nanosecond clock
 		}
 		
 		//increment the system clocks in shared memory
-		simClock[0] += childProcessTimeNanoSeconds;
-		simClock[1] += childProcessTimeSeconds;
-
+		simClock[0] += workTime;
+		totalTimeRunning += workTime;
 
 								//printf("after time conversion\n");		
 
