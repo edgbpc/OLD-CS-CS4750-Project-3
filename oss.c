@@ -44,9 +44,12 @@ FILE * fp;
 int childpid; //pid id for child processes
 
 
+int shmidSimClock;
+
 //taken from book
 static int setperiodic(double sec);
 
+void handle(int signo);
 
 int main (int argc, char *argv[]) {
 	printf("at top of parent\n");
@@ -63,7 +66,6 @@ int main (int argc, char *argv[]) {
 	int totalProcessesCreated = 0; //keeps track of all processes created	
 	int *simClock; // simulated system clock  simClock [0] = seconds, simClock[1] = nanoseconds
 
-	int shmidSimClock;
 
 //	int shmidSecondsClock;
 //	int shmidNanoSecondsClock;
@@ -72,6 +74,10 @@ int main (int argc, char *argv[]) {
 
 
 //	printf("after message queue creation\n");
+
+	if(signal(SIGINT, handle) == SIG_ERR){
+		perror("Signal Failed");
+	}
 
 //getopt
 	char option;
@@ -135,11 +141,12 @@ int main (int argc, char *argv[]) {
 
 
 //MAIN PROCESS
-printf("process count before while loop is %d", processCount);
-	while ( simClock[1] <=2 && totalProcessesCreated < 100) {  //runs for 2 seconds.  simClock [1] incremented in user
+	while ( simClock[1] < 2 && totalProcessesCreated < 100) {  //runs for 2 seconds.  simClock [1] incremented in user
 		//create children
 		while (processCount < maxProcess){ //spawn children to max.  each child will be blocked until there is a message in the box for it
+	
 			childpid = fork();
+		
 			if ((childpid == 0)){
 					fprintf(fp, "Creating new child pid %d at my time %d.%d \n", getpid(), simClock[1], simClock[0]);
 					fflush(fp);
@@ -149,43 +156,45 @@ printf("process count before while loop is %d", processCount);
 			//increment process count
 			processCount++;
 			totalProcessesCreated++;  //used to decided if overall too many processes have generated
-			//sleep(1); //to help visualize runs when testing
 			
-			}
-			//wait for child process to send a message to it
-			wait(NULL);	
-			//CRITICAL SECTION		
-	
-			//receive a message		
-			msgrcv(messageBoxID, &message, sizeof(message), 1, 0);
-			printf("In Parent - received message - message type was %ld\n", message.mesg_type);
-			printf("In Parent - received message - terminated on %d.%d\n", message.mesg_terminatedOn[0], message.mesg_terminatedOn[1]);
-			printf("In Parent - received message - ran for %ld\n", message.mesg_ranFor);
-			printf("In Parent - received message - child pid was %d\n", message.mesg_childPid);
+			if (totalProcessesCreated >= processLimit){ //break inner loop
+				break;
+			}	
+		}
 		
-			//NEED TO CONFIGURE LOG OUTPUT
-
-			//convert message.mesg_ranFor into format seconds.nanoseconds
-			int convertedRanFor[2];
-			convertedRanFor[1] = message.mesg_ranFor/1000000000; //assign fully divisible by nanoseconds to seconds clock
-			convertedRanFor[0] = message.mesg_ranFor%1000000000;
-	
-
-			fprintf(fp, "Child pid is %d is terminating at my time %d.%d because it reached %d.%d which lived for %d.%d\n", message.mesg_childPid, simClock[1], simClock[0], message.mesg_terminatedOn[1], message.mesg_terminatedOn[0], convertedRanFor[1], convertedRanFor[0]);
-			fflush(fp);
-
-			//increment clock by 100 per assignment guidelines
-			simClock[0] += 100;
-			//convert nanoseconds to seconds	
-			if (simClock[0] > 1000000000){ //if nanoSeconds > 1000000000
-				simClock[1] += simClock[0]/1000000000; //add number of fully divisible by nanoseconds to seconds clock.  will truncate
-				simClock[0] = simClock[0]%1000000000; //assign remainder of nanoseconds to nanosecond clock
-			}
-
-			processCount--; //decrement process count when message received from child.  message receied indicates the child has terminated.  this will allow inner while loop to continue if processCount drops below max when the outer loop repeats after receiving message from child
-		printf("process count is %d\n", processCount);	
+		if (totalProcessesCreated >= processLimit){ // break outer loop
+				break;
+		}
 			
-			//send message to child box to signal another child can process
+			//wait for child process to send a message to it
+		wait(NULL);	
+		//CRITICAL SECTION		
+		//receive a message		
+		msgrcv(messageBoxID, &message, sizeof(message), 1, 0);
+		if (simClock[1] >= 2){ // break outer loop if child processes increased simClock seconds to 2
+			break;
+		}
+		processCount--; //receiving a message means a child terminated, reduce processCount.  will allow outer inner loop to continue and spawn new child to replace it		
+		
+		//configure output 
+		//convert message.mesg_ranFor into format seconds.nanoseconds
+		int convertedRanFor[2];
+		convertedRanFor[1] = message.mesg_ranFor/1000000000; //assign fully divisible by nanoseconds to seconds clock
+		convertedRanFor[0] = message.mesg_ranFor%1000000000;
+	
+		fprintf(fp, "Child pid is %d is terminating at my time %d.%d because it reached %d.%d which lived for %d.%d\n", message.mesg_childPid, simClock[1], simClock[0], message.mesg_terminatedOn[1], message.mesg_terminatedOn[0], convertedRanFor[1], convertedRanFor[0]);
+		fflush(fp);
+
+		//increment clock by 100 per assignment guidelines
+		simClock[0] += 100;
+		//convert nanoseconds to seconds	
+		if (simClock[0] > 1000000000){ //if nanoSeconds > 1000000000
+			simClock[1] += simClock[0]/1000000000; //add number of fully divisible by nanoseconds to seconds clock.  will truncate
+			simClock[0] = simClock[0]%1000000000; //assign remainder of nanoseconds to nanosecond clock
+		}
+
+			
+			//send message to child box to signal allow another child to be able to become unblocked
 			message.mesg_type = 1;	
 			if (msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 				perror("oss: failed to send message to child box\n");
@@ -195,6 +204,8 @@ printf("process count before while loop is %d", processCount);
 
 wait(NULL); // wait for all child processes to end
 
+printf("simClock ended at %d.%d\n", simClock[1],simClock[0]);
+printf("totalProcesses reached was %d\n", totalProcessesCreated);
 
 //free  up memory queue and shared memory
 shmdt(simClock);
@@ -230,4 +241,14 @@ static int setperiodic(double sec) {
 
 void print_usage(){
 	printf("future help message\n");
+}
+
+void handle(int signo){
+	if (signo == SIGINT){
+				
+		shmctl(shmidSimClock, IPC_RMID, NULL);
+		msgctl(messageBoxID, IPC_RMID, NULL);
+		wait(NULL);
+		exit(0);
+	}
 }
