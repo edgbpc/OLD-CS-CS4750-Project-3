@@ -22,8 +22,13 @@ struct mesg_buffer {
 	int mesg_childPid; //to tell parent which child terminated
 } message;
 
+void handle(int signo);
 
-int main (int argc, char *argv[]) {
+int main (int argc, char *argv[]){
+
+	if (signal(SIGINT, handle) == SIG_ERR){
+		perror("signal failed");
+	}
 
 	//message queue key
 //	key_t messageQueueParentKey = 59568;
@@ -56,6 +61,7 @@ int main (int argc, char *argv[]) {
 	shmidSimClock = shmget(keySimClock, SHM_SIZE, 0666 );
 
 	//Attach to shared memory and get simClock time
+	//used to determine how long the child lived for
 	int * simClock= (int *)(shmat(shmidSimClock, 0, 0));
 	childProcessStartTime[0] = simClock[0];
 	childProcessStartTime[1] = simClock[1];
@@ -165,6 +171,14 @@ printf("before exit command\n");
 return 0;
 
 }
+
+void handle(int signo){
+	if(signo == SIGINT){
+		fprintf(stderr, "User process %d shut down by signal\n", getpid());
+		exit(0);
+	}
+}
+
 
 
 	
