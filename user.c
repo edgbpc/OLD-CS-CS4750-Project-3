@@ -55,9 +55,7 @@ int main (int argc, char *argv[]){
 
 
 	//Get Shared Memory
-	if ((shmidSimClock = shmget(keySimClock, SHM_SIZE, 0666 )) == -1){
-		perror("user: failed to access simClock");
-	}
+	shmidSimClock = shmget(keySimClock, SHM_SIZE, 0666 );
 
 	//Attach to shared memory and get simClock time
 	//used to determine how long the child lived for
