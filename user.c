@@ -18,7 +18,7 @@
 struct mesg_buffer {
 	long mesg_type; //always 1
 	int mesg_terminatedOn[2]; //[0] for nanoseconds, [1] for seconds
-	float mesg_ranFor;
+	int mesg_ranFor;
 	int mesg_childPid; //to tell parent which child terminated
 } message;
 
@@ -44,7 +44,6 @@ int main (int argc, char *argv[]){
 	float allotatedChildRunTime; //how long the child process is allowed to run.  determined randomly in child
 
 
-	int childProcessStartTime[2];
 
 //TESTING ONLY
 //char sampleMessage[20] = "A test message";
@@ -61,9 +60,10 @@ int main (int argc, char *argv[]){
 	//Attach to shared memory and get simClock time
 	//used to determine how long the child lived for
 	int * simClock= (int *)(shmat(shmidSimClock, 0, 0));
+	int childProcessStartTime[2];
 	childProcessStartTime[0] = simClock[0];
 	childProcessStartTime[1] = simClock[1];
-
+	
 	//message queue
 	if ((messageBoxID = msgget(messageQueueKey, 0666)) == -1){
 		perror("user: failed to acceess parent message box");
@@ -84,7 +84,8 @@ printf("Child %d alloatedRunTime is %f\n", getpid(), allotatedChildRunTime);
 
 //printf("In Child - Sim Clock is %d.%d\n", simClock[1], simClock[0]);
 		msgrcv(messageBoxID, &message, sizeof(message), 1, 0); //retrieve message from max box.  child is blocked unless there is a message to take from box
-		
+	
+		//capture the simClock times before its incremented 	
 		
 		message.mesg_type = 1;
 		//maybe not needed
@@ -103,23 +104,13 @@ printf("Child %d alloatedRunTime is %f\n", getpid(), allotatedChildRunTime);
 		//increment the system clocks in shared memory
 		simClock[0] += workTime;
 		totalTimeRunning += workTime;
-
+		printf("IN CHILD - totalTimeRunning is %d\n", totalTimeRunning);
 		//if  time exceeds alloated time for entire process, terminate and send message to parent
 		if (simClock[1] >= 2){
-printf("simClock has passed 2 seconds\n");
-			message.mesg_type; //always 1
-			message.mesg_terminatedOn[0] = simClock[0] ; //[0] for nanoseconds, [1] for seconds
-			message.mesg_terminatedOn[1] = simClock[1] ;
-			message.mesg_ranFor = totalTimeRunning;
-			message.mesg_childPid = getpid(); //to tell parent which child terminated
 			if(msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 				perror("user: could not send message to parent box");
-			
 			}
-printf("before exit command\n");
-			printf("not been 2 seconds yet\n");
-		}
-
+	}
 		//if duration has not passed, cede critical section to another child process
 		if(totalTimeRunning < allotatedChildRunTime){
 			if(msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
@@ -127,12 +118,12 @@ printf("before exit command\n");
 			}
 		
 		}
-	}	
+	}		
 //when while loop ends, prepare message for parent
 	
 	message.mesg_type; //always 1
-	message.mesg_terminatedOn[0] = simClock[0] ; //[0] for nanoseconds, [1] for seconds
-	message.mesg_terminatedOn[1] = simClock[1] ;
+	message.mesg_terminatedOn[0] = (childProcessStartTime[0] +  simClock[0]) ; //add the two values to represent what time a particular child started and when it ended
+	message.mesg_terminatedOn[1] = (childProcessStartTime[1] + simClock[1]) ; 
 	message.mesg_ranFor = totalTimeRunning;
 	message.mesg_childPid = getpid(); //to tell parent which child terminated
 
