@@ -25,7 +25,7 @@ struct mesg_buffer {
 } message;
 
 
-//Globals
+//Global Variables
 
 //message queue key
 //key_t messageQueueParentKey;
@@ -41,8 +41,8 @@ int messageBoxID;
 char fileName[50] = "data.log";  //default if not selected by command line
 FILE * fp;
 
-int childpid; //pid id for child processes
-
+pid_t childpid; //pid id for child processes
+int *simClock; // simulated system clock  simClock [0] = seconds, simClock[1] = nanoseconds
 
 int shmidSimClock;
 
@@ -56,7 +56,6 @@ int main (int argc, char *argv[]) {
 
 	//initalize variables
 	//keys
-//	messageQueueParentKey = 59568;
 	messageQueueKey = 59569;
 	keySimClock = 59566;
 
@@ -64,20 +63,18 @@ int main (int argc, char *argv[]) {
 	int processCount = 0; //current number of processes
 	int processLimit = 100; //max number of processes allowed by assignment parameters
 	int totalProcessesCreated = 0; //keeps track of all processes created	
-	int *simClock; // simulated system clock  simClock [0] = seconds, simClock[1] = nanoseconds
-
-
-//	int shmidSecondsClock;
-//	int shmidNanoSecondsClock;
 
 	double terminateTime = 20;
 
 
-//	printf("after message queue creation\n");
-
+	//signal handler to catch ctrl c
 	if(signal(SIGINT, handle) == SIG_ERR){
 		perror("Signal Failed");
 	}
+
+	if(signal(SIGALRM, handle) == SIG_ERR){
+		perror("Signal Failed");
+	}	
 
 //getopt
 	char option;
@@ -86,6 +83,7 @@ int main (int argc, char *argv[]) {
 			case 's' : maxProcess = atoi(optarg);
 				break;
 			case 'h': print_usage();
+				exit(0);
 				break;
 			case 'l': 
 				strcpy(fileName, optarg);
@@ -103,7 +101,6 @@ int main (int argc, char *argv[]) {
 		perror("oss: failed to set run timer");
 		return 1;
 		}
-//printf("after setperiodic\n");
 
 //Create Shared Memory
 	if ((shmidSimClock = shmget(keySimClock, SHM_SIZE, IPC_CREAT | 0666)) == -1){
@@ -118,22 +115,14 @@ int main (int argc, char *argv[]) {
 
 
 	fp = fopen(fileName, "w");
-//printf("after file open\n");
-
-//printf("after assigning clock values\n");
-
 
 //create mail boxes
-//	if ((messageBoxParentID = msgget(messageQueueParentKey, IPC_CREAT | 0666)) == -1){
-//		perror("oss: Could not create parent mail box");
-//		return 1;
-//	}
 
 	if ((messageBoxID = msgget(messageQueueKey, IPC_CREAT | 0666)) == -1){
 		perror("oss: Could not create child mail box");
 		return 1;
 	}
-	message.mesg_type = 1; //set message type
+	message.mesg_type = 1; //set message type.  Not sure if this required.  Examples of message queues i found all had this
 
 	if(msgsnd(messageBoxID, &message, sizeof(message), 0) == -1){
 		perror("oss: Failed to send message to child");
@@ -141,17 +130,18 @@ int main (int argc, char *argv[]) {
 
 
 //MAIN PROCESS
-	while ( simClock[1] < 2 && totalProcessesCreated < 100) {  //runs for 2 seconds.  simClock [1] incremented in user
+	while ( simClock[1] < 2 && totalProcessesCreated < processLimit) {  //runs for 2 seconds.  simClock [1] incremented in user
 		//create children
 		while (processCount < maxProcess){ //spawn children to max.  each child will be blocked until there is a message in the box for it
+			
 	
 			childpid = fork();
-		
+			wait(NULL);
+
 			if ((childpid == 0)){
 					fprintf(fp, "Creating new child pid %d at my time %d.%d \n", getpid(), simClock[1], simClock[0]);
 					fflush(fp);
 					execl("./user", NULL);
-					return 1;
 				}
 			//increment process count
 			processCount++;
@@ -167,20 +157,28 @@ int main (int argc, char *argv[]) {
 		}
 			
 			//wait for child process to send a message to it
-		wait(NULL);	
+		//wait(NULL);	
+
 		//CRITICAL SECTION		
 		//receive a message		
 		msgrcv(messageBoxID, &message, sizeof(message), 1, 0);
+			
+		printf("IN PARENT - child ran for %d\n", message.mesg_ranFor);
 		if (simClock[1] >= 2){ // break outer loop if child processes increased simClock seconds to 2
 			break;
-		}
-		processCount--; //receiving a message means a child terminated, reduce processCount.  will allow outer inner loop to continue and spawn new child to replace it		
 		
+		}
+		processCount--; //receiving a message means a child terminated, reduce processCount.
+				//will allow outer inner loop to continue and spawn new child to replace it		
+		
+
 		//configure output 
 		//convert message.mesg_ranFor into format seconds.nanoseconds
 		int convertedRanFor[2];
-		convertedRanFor[1] = message.mesg_ranFor/1000000000; //assign fully divisible by nanoseconds to seconds clock
-		convertedRanFor[0] = message.mesg_ranFor%1000000000;
+		if (message.mesg_ranFor > 1000000000){
+			convertedRanFor[1] = message.mesg_ranFor/1000000000; //assign fully divisible by nanoseconds to seconds clock
+			convertedRanFor[0] = message.mesg_ranFor%1000000000;
+		}
 	
 		fprintf(fp, "Child pid is %d is terminating at my time %d.%d because it reached %d.%d which lived for %d.%d\n", message.mesg_childPid, simClock[1], simClock[0], message.mesg_terminatedOn[1], message.mesg_terminatedOn[0], convertedRanFor[1], convertedRanFor[0]);
 		fflush(fp);
@@ -209,9 +207,7 @@ printf("totalProcesses reached was %d\n", totalProcessesCreated);
 
 //free  up memory queue and shared memory
 shmdt(simClock);
-
 shmctl(shmidSimClock, IPC_RMID, NULL);
-//msgctl(messageBoxParentID, IPC_RMID, NULL);
 msgctl(messageBoxID, IPC_RMID, NULL);
 
 
@@ -219,7 +215,6 @@ msgctl(messageBoxID, IPC_RMID, NULL);
 return 0;
 
 }
-
 
 
 //TAKEN FROM BOOK
@@ -240,12 +235,18 @@ static int setperiodic(double sec) {
 
 
 void print_usage(){
-	printf("future help message\n");
+	printf("Execution syntax oss -options value\n");
+	printf("Options:\n");
+	printf("-h: this help message\n");
+	printf("-l: specify file name for log file.  Default: data.log\n");
+	printf("-s: specify max limit of processes that can be ran.  Default: 5\n");
+	printf("-t: specify max time duration in seconds.  Default: 20\n");
 }
 
+
 void handle(int signo){
-	if (signo == SIGINT){
-				
+	if (signo == SIGINT || signo == SIGALRM){
+		shmdt(simClock);	
 		shmctl(shmidSimClock, IPC_RMID, NULL);
 		msgctl(messageBoxID, IPC_RMID, NULL);
 		wait(NULL);
