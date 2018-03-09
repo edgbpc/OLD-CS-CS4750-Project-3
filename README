@@ -7,8 +7,6 @@ To Execute program:
 Use -h to see options menu. Each menu has a default value if not used.
 
 
-I designed this based of proc_fan from the first project as it seemed like a logical start
-
 I used one message queue to trigger when either oss or user can enter their critical sections.  Experience using shared memory from project 2 definiately made this project easier.  I was able to jump to determining critical section much quicker then I could on project 2.  
 
 I am not entirely certain my math logic is sound in user but I do think its executing as intended even if the results are printing with correct values.  I am continuing to work on that component.
@@ -17,6 +15,8 @@ I followed your increment recommendation and that did make the project much easi
 
 I also was not entirely certain what you mean by "because it reached xx.xx".  In my implemmentation it displays the simulation time of that particular run of user.
 
-On every test run, my program hit the max number of processes before it hit the "terminateTime" as indicated in the setperiodic function.  It also reached the 100 processes in about .50 to .75 seconds so it never has terminated because it hit the 2 seconds allowed by the main oss loop.
+On every test run, my program hit the max number of processes before it hit the "terminateTime" as indicated in the setperiodic function.  It also reached the 100 processes in about .50 to .75 seconds so it never has terminated because it hit the 2 seconds allowed by the main oss loop.  This also caused not all child process to be completed on each execution of oss.
 
+Regarding how long a child lives for, all runs shows 0.1 because the accumlated nanoseconds is never sufficient to go over before the child hits the max allocated time that its allowed.  since the time for the child to run is random between 1 and 1000000000, the vast majority of times that will generate will be far less then a million nanoseconds to start ticking above 0.1.
 
+There is an issue that I could not track down.  if -s is 5, then the first 4 children never report back to parent with termination information.  only the following children spawned as processCount is decrement report back. so if s is 20, then first 19 children do not report back.
