@@ -134,10 +134,10 @@ int main (int argc, char *argv[]) {
 		//create children
 		while (processCount < maxProcess){ //spawn children to max.  each child will be blocked until there is a message in the box for it
 			
-	
-			childpid = fork();
+			if ((childpid = fork()) == -1){
+				perror("oss: failed to fork child");
+			}
 			wait(NULL);
-
 			if ((childpid == 0)){
 					fprintf(fp, "Creating new child pid %d at my time %d.%d \n", getpid(), simClock[1], simClock[0]);
 					fflush(fp);
@@ -147,31 +147,25 @@ int main (int argc, char *argv[]) {
 			processCount++;
 			totalProcessesCreated++;  //used to decided if overall too many processes have generated
 			
-			if (totalProcessesCreated >= processLimit){ //break inner loop
-				break;
-			}	
 		}
 		
-		if (totalProcessesCreated >= processLimit){ // break outer loop
-				break;
-		}
-			
 			//wait for child process to send a message to it
-		//wait(NULL);	
 
+		wait(NULL);
 		//CRITICAL SECTION		
 		//receive a message		
-		msgrcv(messageBoxID, &message, sizeof(message), 1, 0);
+		if (msgrcv(messageBoxID, &message, sizeof(message), 1, 0) == -1){
+			perror("oss: Failed to received a message");
+		}
 			
-		printf("IN PARENT - child ran for %d\n", message.mesg_ranFor);
+	//	printf("IN PARENT - child ran for %d\n", message.mesg_ranFor);
 		if (simClock[1] >= 2){ // break outer loop if child processes increased simClock seconds to 2
 			break;
-		
 		}
+		
 		processCount--; //receiving a message means a child terminated, reduce processCount.
 				//will allow outer inner loop to continue and spawn new child to replace it		
 		
-
 		//configure output 
 		//convert message.mesg_ranFor into format seconds.nanoseconds
 		int convertedRanFor[2];
@@ -190,7 +184,6 @@ int main (int argc, char *argv[]) {
 			simClock[1] += simClock[0]/1000000000; //add number of fully divisible by nanoseconds to seconds clock.  will truncate
 			simClock[0] = simClock[0]%1000000000; //assign remainder of nanoseconds to nanosecond clock
 		}
-
 			
 			//send message to child box to signal allow another child to be able to become unblocked
 			message.mesg_type = 1;	
