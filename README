@@ -1,0 +1,22 @@
+Author: Eric Goodwin
+Class: CS 4760 Evening Section
+Instructor: Dr. Mark Hauschild
+
+To Execute program:
+./oss.  This will execute with all default options and generate a file called data.log with results of the processes. 
+Use -h to see options menu. Each menu has a default value if not used.
+
+
+I designed this based of proc_fan from the first project as it seemed like a logical start
+
+I used one message queue to trigger when either oss or user can enter their critical sections.  Experience using shared memory from project 2 definiately made this project easier.  I was able to jump to determining critical section much quicker then I could on project 2.  
+
+I am not entirely certain my math logic is sound in user but I do think its executing as intended even if the results are printing with correct values.  I am continuing to work on that component.
+
+I followed your increment recommendation and that did make the project much easier.
+
+I also was not entirely certain what you mean by "because it reached xx.xx".  In my implemmentation it displays the simulation time of that particular run of user.
+
+On every test run, my program hit the max number of processes before it hit the "terminateTime" as indicated in the setperiodic function.  It also reached the 100 processes in about .50 to .75 seconds so it never has terminated because it hit the 2 seconds allowed by the main oss loop.
+
+
